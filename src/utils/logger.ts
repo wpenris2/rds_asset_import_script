@@ -12,7 +12,7 @@ export class Logger {
     private logger: winston.Logger;
     private logDir: string;
     private logFileName: string;
-    
+
     constructor(config: Config, filename?: string) {
         this.logDir = config.paths.logDir || 'logs';  // to config.logDir or 'logs'
         fsx.ensureDirSync(this.logDir);         //ensure dir exists
@@ -50,5 +50,24 @@ export class Logger {
     /** Write a single log message immediately. */
     log(message: string) {
         this.logger.info(message);
+    }
+
+
+
+    /**
+     * Static error-logging runner for async functions. Also logs to console optionally
+     * Usage: await Logger.runWithErrorLogging(async () => { ... }, logger)
+     */
+    static async runWithErrorLogging(fn: () => Promise<any>, logger: Logger, consoleLog: boolean) {
+        try {
+            await fn();
+        } catch (err) {
+            logger.push(`❌ Fatal error: ${err instanceof Error ? err.message : String(err)}`);
+            if (consoleLog) {
+                console.error(`❌ Fatal error: ${err instanceof Error ? err.message : String(err)}`);
+            }
+            await logger.write();
+            process.exit(1);
+        }
     }
 }

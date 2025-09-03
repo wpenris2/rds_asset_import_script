@@ -3,20 +3,20 @@ export interface Paths {
     inputDirJson: string;
     outputDir: string;
     logDir: string;
-    themeSourceJson?: string;
-    scssOutFile?: string;
-    outFileJsonSnapshot?: string;
-    outFileBindingsFile?: string;
-    themeSourceRoot?: string;
-    mrdsRoot?: string;
-    webRoot?: string;
-    outputDirScss?: string;
-    SCSS_OUTFILE?: string;
-    OUTFILE_BASE?: string;
+    themeSourceRoot: string;
+    mrdsRoot: string;
+    webRoot: string;
+    outputDirScss: string;
+    OUTFILE_SCSS: string;
+    OUTFILE_SCSS_JSON:string
+    OUTFILE_JSON_SNAPSHOT_RDSICONS: string;
+    OUTFILE_JSON_SNAPSHOT_OTHER_ICONS: string;
+    OUTFILE_BINDINGS_RDS_ICONS: string;
+    OUTFILE_BINDINGS_OTHER_ICONS: string;
 }
 
 export interface Config {
     paths: Paths;
-    startCodepoint?: number;
+    startCodepoint: number;
     enableFallbackDefault: boolean;
 }
