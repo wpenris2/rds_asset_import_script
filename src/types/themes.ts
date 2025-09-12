@@ -15,3 +15,4 @@ export interface ThemeDiff {
   removed: Record<string, string>;
   changed: Array<{ key: string; oldValue: string; newValue: string }>;
 }
+

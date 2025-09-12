@@ -19,7 +19,7 @@
     "annotation-dismiss-button-line-height": "0",
     "annotation-dismiss-button-padding": "4px",
     "annotation-font-size": "16px",
-    "annotation-header-gap": "4px",
+    "annotation-header-gap": "5px",
     "annotation-heading-color-text": "hsl(219, 2%, 13%)",
     "annotation-heading-font-size": "16px",
     "annotation-heading-font-style": "normal",

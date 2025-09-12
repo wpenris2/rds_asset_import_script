@@ -2,36 +2,87 @@
 
 import type { Themes, ThemeVariables, ThemeDiff } from '../types/';
 import { fsx } from '../utils/fsx';
+import { nowISO } from '../utils/date';
 
 
 /** Ensure CSS var names start with `--name`, even if it doesn't. */
 export function normalizeCssVarName(name: string): string {
+    if (name == null || name === '') {
+        throw new Error('CSS variable name must not be empty or null');
+    }
     return name.startsWith('--') ? name : `--${name}`;
 }
 
 
 /** Clean a CSS value: strip !important, trailing commas; wrap comma values in unquote("..."). */
 export function normalizeCssValue(raw: unknown): string {
+    if (raw == null || raw === '') throw new Error('CSS variable value must not be empty or null');
+
     let cleanedValue = typeof raw === 'string' ? raw : String(raw);
     cleanedValue = cleanedValue.replace(/\s*!important\s*/gi, ''); //take out important
     cleanedValue = cleanedValue.trim().replace(/,+\s*$/g, '');  //take out trailing commas
-    if (cleanedValue.includes(',')) {
-        cleanedValue = `unquote("${cleanedValue.replace(/"/g, '\\"')}")`;  //use unquote() for comma-separated css var values
+    if (cleanedValue.includes(',') && !/^unquote\(/.test(cleanedValue)) { //no double unquote 
+        cleanedValue = `unquote("${cleanedValue.replace(/"/g, '\\"')}")`;
     }
     return cleanedValue;
 }
 
 
-/** Merge N theme objects into one Themes object. */
+// takes in a target and source theme variables, merges source into target;
+// if double keys with different values, then throw error.
+//I'd rather have this be a private function, but I guess it's not really an issue
+export function mergeVars(target: ThemeVariables, vars: ThemeVariables) {
+    for (const [key, val] of Object.entries(vars)) {
+        const normKey = normalizeCssVarName(key);
+        const normVal = normalizeCssValue(val);
+        const hasUnnormKey = key in target;
+        const hasNormKey = normKey in target;
+
+        if (hasNormKey) {
+            if (target[normKey] !== normVal) {
+                throw new Error(`Duplicate CSS variable name with different values detected: ${normKey} (${target[normKey]} vs ${normVal})`);
+            }
+            continue; // we do not need to set the value - it is already there.
+        }
+
+        if (hasUnnormKey && target[key] !== normVal) {
+            throw new Error(`Duplicate CSS variable name with different values detected: ${normKey} (${target[key]} vs ${normVal})`);
+        }
+
+        if (hasUnnormKey) {
+            // Value is the same, replace with normalized key
+            delete target[key];
+            target[normKey] = normVal;
+            continue;
+        }
+
+        target[normKey] = normVal;
+    }
+}
+
+// merges multiple theme objects jsons with css vars into one, normalizing names and values
 export function mergeThemeObjects(objects: Themes[]): Themes {
+    //check for empty input
+    if (!objects.length || objects.length === 0) throw new Error('No theme objects provided for merging.');
+    //check for any empty or invalid theme object in the array
+    for (const obj of objects) {
+        if (!obj || typeof obj !== 'object' || Object.keys(obj).length === 0) {
+            throw new Error('Theme object in mergeThemeObjects is empty or invalid.');
+        }
+    }
+
     const out: Themes = {};               // 1. Prepare empty output object
     for (const obj of objects) {          // 2. Process each theme object in the input array
         for (const [theme, vars] of Object.entries(obj)) {  // 3. For each theme in the object (e.g., "default", "dark")
             out[theme] ??= {};                // 4. Initialize (empty) theme object in output if undefined/null
-            for (const [key, val] of Object.entries(vars)) {    // 5. For each variable in the theme
-                out[theme][normalizeCssVarName(key)] = normalizeCssValue(val);        // 6. Normalize variable name and value, then store
-            }
+            mergeVars(out[theme], vars);      // 5-6. Normalize and store each variable
         }
+    }
+
+    // Sort the keys for each theme
+    for (const theme of Object.keys(out)) {
+        const sortedEntries = Object.entries(out[theme]).sort(([key], [value]) => key.localeCompare(value));
+        out[theme] = Object.fromEntries(sortedEntries);
     }
     return out;
 }
@@ -40,20 +91,25 @@ export function mergeThemeObjects(objects: Themes[]): Themes {
 /** Parse JSON string into Themes object with minimal validation, with polishing css var name + value. */
 export function parseThemesJson(text: string): Themes {
     const data = JSON.parse(text) as unknown;             // Parse JSON string to data object with any type
-    if (typeof data !== 'object' || data === null) {      // Validate top-level object
-        throw new Error('Themes JSON must be an object.');  // Error if not object or null
+    if (typeof data !== 'object' || data === null || Array.isArray(data)) {      // Validate top-level object
+        throw new Error('Themes JSON must be an object.');  // Error if not object, null, or array
     }
     const out: Themes = {};                               // Prepare output object
 
     // For each theme in parsed data
     for (const [theme, vars] of Object.entries(data as Record<string, unknown>)) {
-        if (typeof vars !== 'object' || vars === null) {          // Validate theme object
-            throw new Error(`Theme "${theme}" must be an object.`); // Error if not object
+        if (typeof vars !== 'object' || vars === null || Array.isArray(vars)) { // Validate 1 theme object
+            throw new Error(`Theme "${theme}" must be an object.`);
         }
-        const ThemeVariables: ThemeVariables = {};                // Prepare theme variables object
-        // For each variable in theme
+        const ThemeVariables: ThemeVariables = {};
         for (const [key, value] of Object.entries(vars as Record<string, unknown>)) {
-            ThemeVariables[normalizeCssVarName(key)] = normalizeCssValue(value); // Normalize and store variable
+            if (typeof key !== 'string' || key === '') { // Validate variable name = non-empty string
+                throw new Error(`Theme variable key in theme "${theme}" must be a non-empty string.`);
+            }
+            if (!(typeof value === 'string' || typeof value === 'number')) { // Validate variable value = string or number
+                throw new Error(`Theme variable value for key "${key}" in theme "${theme}" must be a string or number.`);
+            }
+            ThemeVariables[normalizeCssVarName(key)] = normalizeCssValue(value);
         }
         out[theme] = ThemeVariables; // Store theme variables in output
     }
@@ -79,11 +135,17 @@ export function diffThemes(prev: Themes = {}, next: Themes = {}): ThemeDiff[] {
 
         // Get all variable names in theme
         const keys = Array.from(new Set([...Object.keys(cssVarsPrev), ...Object.keys(cssVarsNext)])).sort();
-        for (const k of keys) {                                         // For each variable name
-            if (!(k in cssVarsPrev)) added[k] = cssVarsNext[k]!;        // If not in prev, it's added
-            else if (!(k in cssVarsNext)) removed[k] = cssVarsPrev[k]!; // If not in next, it's removed
-            // If values differ, record the change as old -> new
-            else if (cssVarsPrev[k] !== cssVarsNext[k]) {
+        for (const k of keys) { // For each variable name
+            if (!(k in cssVarsPrev)) {
+                added[k] = cssVarsNext[k]!; // If not in prev, it's added
+                continue;
+            }
+            if (!(k in cssVarsNext)) {
+                removed[k] = cssVarsPrev[k]!; // If not in next, it's removed
+                continue;
+            }
+            if (cssVarsPrev[k] !== cssVarsNext[k]) {
+                // If values differ, record the change as old -> new
                 changed.push({
                     key: k,
                     oldValue: cssVarsPrev[k],
@@ -145,6 +207,9 @@ export function formatThemeDiffs(themeDiffCol: ThemeDiff[]): string {
  * plus a total count at the end. Intended for display/logging.
  */
 export function formatFirstRunCounts(themes: Themes): string {
+    if (!themes || typeof themes !== 'object' || Array.isArray(themes) || Object.keys(themes).length === 0) {
+        throw new Error('No themes provided for initial count summary.');
+    }
     const lines: string[] = ['Initial creation — theme variables detected:']; // Collect output lines
     let total = 0;                                                            // Track total variable count
     const pad = Math.max(0, ...Object.keys(themes).map(n => n.length));       // Calculate padding for theme names to get nice table
@@ -165,6 +230,9 @@ export function formatFirstRunCounts(themes: Themes): string {
  */
 export function totalsFromDiff(themeDiffCol: ThemeDiff[])
     : { added: number; removed: number; changed: number } {
+    if (!Array.isArray(themeDiffCol)) {
+        throw new Error('Input to totalsFromDiff must be an array of ThemeDiffs.');
+    }
     let added = 0, removed = 0, changed = 0;                // Initialize counters
     for (const ThemeDiff of themeDiffCol) {                 // Iterate over each theme diff
         added += Object.keys(ThemeDiff.added).length;       // Count added variables
@@ -189,6 +257,9 @@ export function totalsFromDiff(themeDiffCol: ThemeDiff[])
  * ) !default;
  */
 export function buildScssThemeMap(themes: Themes): string {
+    if (!themes || typeof themes !== 'object' || Array.isArray(themes) || Object.keys(themes).length === 0) {
+        throw new Error('No themes provided for SCSS map generation.');
+    }
     const themeEntries = Object.entries(themes)         // Get theme entries
         .sort(([a], [b]) => a.localeCompare(b))           // Sort themes by name
         .map(([themeName, variables]) => {                // Map each theme to its SCSS representation
@@ -227,72 +298,77 @@ export function buildScss(
 ): string {
     const {
         enableFallback = false,
-        generatedDate,
-        lastUpdatedDate,
-        changeLogText,
-        diffText,
-        scssMap
+        generatedDate = '',
+        lastUpdatedDate = '',
+        changeLogText = '',
+        diffText = '',
+        scssMap = ''
     } = opts;
 
-    // Compose banner and header into a single string
-    const body = `/*
-  AUTO-GENERATED BY SCRIPT — DO NOT EDIT.
-  Generated: ${generatedDate ?? ''}
-  Last Updated: ${lastUpdatedDate ?? ''}
+    const formattedChangeLog = changeLogText
+        ? changeLogText.split('\n').map(l => `  ${l}`).join('\n')
+        : '';
+    const formattedDiff = diffText
+        ? diffText.split('\n').map(l => `  ${l}`).join('\n')
+        : '';
+    const fallbackStr = String(enableFallback);
 
-  Change Log:
-${changeLogText ? changeLogText.split('\n').map(l => `  ${l}`).join('\n') : ''}
+    const scssBody = `/*
+    AUTO-GENERATED BY SCRIPT — DO NOT EDIT.
+    Generated: ${generatedDate}
+    Last Updated: ${lastUpdatedDate}
 
-  Diff:
-${diffText ? diffText.split('\n').map(l => `  ${l}`).join('\n') : ''}
+    Change Log:
+${formattedChangeLog}
+
+    Diff:
+${formattedDiff}
 */
 
-
-
-$enableFallback: ${String(enableFallback)} !default;
+$enableFallback: ${fallbackStr} !default;
 
 // SCSS Map with all RDS Css Variables
 ${scssMap}
 
 // Compile-time: return a token's value from a theme
 @function theme-var($theme, $token) {
-  @return map-get(map-get($themes, $theme), $token);
+    @return map-get(map-get($themes, $theme), $token);
 }
 
 // Compile-time: apply a theme token to a property
 @mixin theme-prop($property, $theme, $token) {
-  #{$property}: theme-var($theme, $token);
+    #{$property}: theme-var($theme, $token);
 }
 
 /* Runtime: function returning var(--token, fallback)
-   - If $enableFallback is false, returns var(--token) with no fallback
-   - If true, auto-picks fallback from $themes[$theme][$token] (default "default")
-   - If token not found and $fallback provided, uses that
+     - If $enableFallback is false, returns var(--token) with no fallback
+     - If true, auto-picks fallback from $themes[$theme][$token] (default "default")
+     - If token not found and $fallback provided, uses that
 */
 @function applyvar($token, $theme: default, $fallback: null) {
-  @if $enableFallback == false {
-    @return var(#{$token});
-  }
-  @if map-has-key($themes, $theme) and map-has-key(map-get($themes, $theme), $token) {
-    @return var(#{$token}, #{map-get(map-get($themes, $theme), $token)});
-  } @else if $fallback != null {
-    @return var(#{$token}, #{$fallback});
-  } @else {
-    @return var(#{$token});
-  }
+    @if $enableFallback == false {
+        @return var(#{$token});
+    }
+    @if map-has-key($themes, $theme) and map-has-key(map-get($themes, $theme), $token) {
+        @return var(#{$token}, #{map-get(map-get($themes, $theme), $token)});
+    } @else if $fallback != null {
+        @return var(#{$token}, #{$fallback});
+    } @else {
+        @return var(#{$token});
+    }
 }
 
 // Emit CSS variables for all themes under [data-theme="..."]
 @each $theme, $vars in $themes {
-  :root[data-theme="#{$theme}"] {
-    @each $name, $value in $vars {
-      #{$name}: #{$value};
+    :root[data-theme="#{$theme}"] {
+        @each $name, $value in $vars {
+            #{$name}: #{$value};
+        }
     }
-  }
 }
 `.trim();
 
-    return `${body}\n`;
+    return `${scssBody}\n`;
 }
 
 /**
@@ -312,5 +388,17 @@ export async function loadAndMergeJsons(dir: string): Promise<Themes> {
 }
 
 
+/** Extract the generated date from SCSS file content, or return now if not found. */
+export function extractOrCreateGeneratedDate(scssContent: string | null): string {
+    const now = nowISO();
+    if (!scssContent) return now; // If no content, return current time
+    const match = scssContent.match(/Generated:\s*(.*)/); // Extract generated date
+    return match ? match[1].trim() : now; // Return extracted date or current time
+}
 
-
+/** Extract the $enableFallback value from SCSS file content, or use the default. */
+export function extractOrCreatePreservedFallback(scssContent: string | null, defaultFallback: boolean): boolean {
+    if (!scssContent) return defaultFallback;
+    const match = scssContent.match(/\$enableFallback:\s*(true|false)\s*!default;/);
+    return match ? match[1] === 'true' : defaultFallback;
+}
