@@ -1,0 +1,13 @@
+{
+  "default": {
+    "--color-primary": "yellow",
+    "--color-secondary": "blue",
+    "--font-size": "16px"
+  },
+  "dark": {
+    "--color-primary": "darkyellow",
+    "--color-secondary": "darkblue",
+    "--font-size": "18px",
+    "--new-variable": "newValue2"
+  }
+}

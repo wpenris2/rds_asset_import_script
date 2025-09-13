@@ -1,0 +1,18 @@
+{
+  "default": {
+    "--color-primary": "yellow",
+    "--color-secondary": "blue",
+    "--font-size": "16px"
+  },
+  "dark": {
+    "--color-primary": "darkyellow",
+    "--color-secondary": "darkgreen",
+    "--font-size": "16px",
+    "--border-radius": "8px"
+  },
+  "light": {
+    "--color-primary": "pink",
+    "--color-secondary": "lightblue",
+    "--font-size": "14px"
+  }
+}

@@ -1,9 +1,18 @@
-node_modules
-dist
-coverage
+
+node_modules/
+dist/
+coverage/
 .env
 .DS_Store
+json
+
+# Vitest cache/output
+.vitest/
 
 # Ignore logs (test and run logs)
+*.log
 test-logs/
+
+# Regression test temp output
+tmp_regression_test/
 
