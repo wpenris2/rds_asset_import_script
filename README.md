@@ -62,17 +62,29 @@ Supports nested keys (dot notation) and parses JSON values if possible.
 - **File helpers:** `src/utils/fsx.ts`
 - **Logger:** `src/utils/logger.ts`
 
+
 ## Development & Testing
 
 - All utilities are robust, normalized, and well-tested
-- Run tests with:
+- Run normal tests with:
 
 ```sh
-npm test
+npx vitest
 ```
 
 - All test data is centralized in `src/lib/themes.test.data.ts`
 - Only ES imports are used in tests
+
+### Regression Tests
+
+- Regression tests are included but are **not** run by default.
+- To run only the regression tests:
+
+```sh
+npm run regression
+```
+
+- Regression test logs are written to `test-logs/regression.log`.
 
 ## Example Regression Test Scenarios
 
